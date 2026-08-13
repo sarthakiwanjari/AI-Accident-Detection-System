@@ -1,0 +1,22 @@
+# Sensitive files (never upload)
+.env
+
+# Model files (too large)
+*.pt
+yolov8*.pt
+
+# Data folders
+data/
+uploads/
+clips/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+.venv/
+
+# System files
+Thumbs.db
