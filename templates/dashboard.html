@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AccidentWatch v3 — Nashik Traffic Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg0:#060810;--bg1:#0b0f18;--bg2:#10161f;--bg3:#161d28;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.11);
+  --cyan:#00e5ff;--cyan-d:rgba(0,229,255,0.08);
+  --red:#ff2d2d;--red-d:rgba(255,45,45,0.1);
+  --green:#00e676;--green-d:rgba(0,230,118,0.08);
+  --amber:#ffab00;--amber-d:rgba(255,171,0,0.08);
+  --purple:#c084fc;--purple-d:rgba(192,132,252,0.08);
+  --blue:#60a5fa;
+  --text:#e2eaf4;--muted:#4e6070;--muted2:#2d3d4d;
+  --mono:'JetBrains Mono',monospace;
+  --display:'Rajdhani',sans-serif;
+  --r:8px;--r2:12px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:var(--display)}
+body{background:var(--bg0);color:var(--text);display:flex;flex-direction:column}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 3px)}
+
+/* HEADER */
+header{height:54px;min-height:54px;flex-shrink:0;display:flex;align-items:center;
+  padding:0 18px;gap:14px;background:var(--bg1);border-bottom:1px solid var(--border);z-index:10}
+.logo{display:flex;align-items:center;gap:10px;margin-right:6px}
+.logo-icon{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#ff2d2d,#880000);
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  box-shadow:0 0 12px rgba(255,45,45,.4);animation:glow-pulse 3s infinite}
+@keyframes glow-pulse{0%,100%{box-shadow:0 0 12px rgba(255,45,45,.4)}50%{box-shadow:0 0 20px rgba(255,45,45,.7)}}
+.logo-text{font-size:20px;font-weight:700;letter-spacing:1px}
+.logo-text span{color:var(--cyan)}
+.logo-sub{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}
+
+.hpill{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:20px;
+  padding:4px 11px;font-family:var(--mono);font-size:11px}
+.hpill.live{border-color:var(--green);background:var(--green-d);color:var(--green)}
+.hpill.gpu{border-color:var(--purple);background:var(--purple-d);color:var(--purple)}
+.dot{width:6px;height:6px;border-radius:50%}
+.dot.g{background:var(--green);animation:blink 1.4s infinite}
+.dot.r{background:var(--red);animation:blink .8s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.hsep{width:1px;height:26px;background:var(--border);margin:0 2px}
+.hstat{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
+.hstat b{color:var(--text);font-weight:500}
+.ml{margin-left:auto}
+#hclock{font-family:var(--mono);font-size:13px;color:var(--muted)}
+
+.btn{border:1px solid var(--border2);border-radius:6px;background:none;color:var(--text);
+  font-family:var(--mono);font-size:11px;padding:5px 13px;cursor:pointer;transition:all .18s;white-space:nowrap}
+.btn:hover{background:var(--border)}
+.btn.red{border-color:var(--red);color:var(--red);background:var(--red-d)}
+.btn.red:hover{background:var(--red);color:#fff}
+.btn.cyan{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-d)}
+.btn.cyan:hover{background:var(--cyan);color:#000}
+.btn.green{border-color:var(--green);color:var(--green);background:var(--green-d)}
+.btn.green:hover{background:var(--green);color:#000}
+
+/* MAIN GRID */
+.main{flex:1;display:grid;overflow:hidden;
+  grid-template-columns:1fr 1fr 300px;
+  grid-template-rows:100px 1fr;
+  gap:10px;padding:10px}
+
+/* STAT CARDS */
+.stat-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.sc{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+  padding:12px 14px;position:relative;overflow:hidden;transition:border .2s}
+.sc:hover{border-color:var(--border2)}
+.sc::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:2px 2px 0 0}
+.sc.c0::after{background:var(--cyan)}.sc.c1::after{background:var(--red)}
+.sc.c2::after{background:var(--green)}.sc.c3::after{background:var(--amber)}
+.sc.c4::after{background:var(--purple)}.sc.c5::after{background:var(--blue)}
+.sc-lbl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:5px}
+.sc-val{font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1;transition:all .3s}
+.sc.c0 .sc-val{color:var(--cyan)}.sc.c1 .sc-val{color:var(--red)}
+.sc.c2 .sc-val{color:var(--green)}.sc.c3 .sc-val{color:var(--amber)}
+.sc.c4 .sc-val{color:var(--purple)}.sc.c5 .sc-val{color:var(--blue)}
+.sc-sub{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes flash-in{0%{transform:scale(1.12);opacity:.5}100%{transform:scale(1);opacity:1}}
+.flashing .sc-val{animation:flash-in .35s ease-out}
+
+/* PANEL */
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+  overflow:hidden;display:flex;flex-direction:column}
+.ph{display:flex;align-items:center;justify-content:space-between;
+  padding:9px 14px;border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);flex-shrink:0}
+.badge{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:9px}
+
+/* VIDEO */
+.video-panel{grid-row:2}
+.vtabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+.vtab{flex:1;padding:8px;text-align:center;font-family:var(--mono);font-size:10px;
+  text-transform:uppercase;letter-spacing:1px;cursor:pointer;color:var(--muted);
+  background:none;border:none;border-bottom:2px solid transparent;transition:all .2s}
+.vtab.active{color:var(--cyan);border-bottom-color:var(--cyan);background:var(--cyan-d)}
+.vtab:hover:not(.active){color:var(--text)}
+
+.vwrap{flex:1;position:relative;overflow:hidden;background:#000}
+.vwrap img{width:100%;height:100%;object-fit:contain;display:block}
+
+.acc-ring{display:none;position:absolute;inset:0;pointer-events:none;
+  border:4px solid var(--red);z-index:5;animation:ring-flash .4s steps(1) infinite}
+.acc-ring.on{display:block}
+@keyframes ring-flash{0%,100%{opacity:1}50%{opacity:0}}
+
+.acc-banner{display:none;position:absolute;top:0;left:0;right:0;z-index:6;
+  background:linear-gradient(90deg,#9b0000,#600000);
+  padding:10px 16px;font-family:var(--mono);font-size:12px;font-weight:600;
+  align-items:center;gap:10px}
+.acc-banner.on{display:flex;animation:slide-down .3s ease}
+@keyframes slide-down{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+.acc-dot{width:9px;height:9px;border-radius:50%;background:var(--red);flex-shrink:0;animation:blink .5s infinite}
+.acc-sev{background:rgba(255,255,255,.15);border-radius:4px;padding:2px 8px;font-size:9px;letter-spacing:1px}
+.acc-time{margin-left:auto;font-size:10px;color:rgba(255,255,255,.6)}
+
+/* VIDEO SOURCE CONTROLS */
+.vsrc{padding:10px 12px;border-top:1px solid var(--border);flex-shrink:0;
+  display:flex;flex-direction:column;gap:8px}
+.vsrc-row{display:flex;align-items:center;gap:8px}
+.vsrc-label{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap}
+
+/* Upload progress */
+.upload-prog{display:none;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin-top:2px}
+.upload-prog.show{display:block}
+.upload-bar{height:100%;background:var(--cyan);width:0%;transition:width .3s;border-radius:2px}
+
+.path-input{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  color:var(--text);font-family:var(--mono);font-size:10px;padding:5px 10px;outline:none}
+.path-input:focus{border-color:var(--cyan)}
+.path-input::placeholder{color:var(--muted2)}
+
+#vsrc-status{font-family:var(--mono);font-size:10px;color:var(--green)}
+
+.vfoot{padding:7px 14px;display:flex;align-items:center;gap:10px;
+  border-top:1px solid var(--border);font-family:var(--mono);font-size:10px;flex-shrink:0}
+.stream-live{color:var(--green);display:flex;align-items:center;gap:5px}
+.vfr{margin-left:auto;display:flex;gap:14px;color:var(--muted)}
+
+/* RIGHT COLUMN */
+.right-col{grid-row:2;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.chart-box{padding:10px 12px;height:130px;position:relative}
+
+.bdgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 12px}
+.bdi{display:flex;align-items:center;justify-content:space-between;
+  background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  padding:6px 10px;font-family:var(--mono);font-size:10px}
+.bdi-n{color:var(--muted)}.bdi-v{color:var(--text);font-weight:600}
+
+.cong-wrap{padding:0 12px 10px}
+.cong-lbl{font-family:var(--mono);font-size:9px;color:var(--muted);
+  display:flex;justify-content:space-between;margin-bottom:4px}
+.cong-track{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.cong-fill{height:100%;border-radius:2px;transition:width .5s,background .5s}
+
+/* SIDEBAR */
+.sidebar{grid-row:2;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.inc-list{overflow-y:auto;flex:1}
+.inc-item{padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.inc-item:hover{background:var(--bg3)}
+.inc-top{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+.sp{font-family:var(--mono);font-size:8px;font-weight:600;
+  padding:2px 7px;border-radius:3px;text-transform:uppercase;letter-spacing:.5px}
+.sp1{background:rgba(255,214,0,.12);color:#ffd600;border:1px solid rgba(255,214,0,.25)}
+.sp2{background:var(--amber-d);color:var(--amber);border:1px solid rgba(255,171,0,.25)}
+.sp3{background:var(--red-d);color:var(--red);border:1px solid rgba(255,45,45,.25)}
+.inc-vehs{font-size:11px;color:var(--text)}
+.inc-time{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--muted)}
+.inc-meta{font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:3px}
+.ilink{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;
+  color:var(--cyan);text-decoration:none;border:1px solid rgba(0,229,255,.2);
+  border-radius:3px;padding:1px 7px;background:var(--cyan-d);transition:all .15s}
+.ilink:hover{background:var(--cyan);color:#000}
+.ilink.amber{color:var(--amber);border-color:rgba(255,171,0,.2);background:var(--amber-d)}
+.ilink.amber:hover{background:var(--amber);color:#000}
+.empty-msg{padding:24px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--muted2);line-height:1.8}
+
+/* TOAST */
+#toast{display:none;position:fixed;bottom:18px;right:18px;z-index:9000;
+  background:var(--bg2);border:1px solid var(--red);border-radius:var(--r2);
+  padding:14px 16px;width:300px;box-shadow:0 8px 32px rgba(0,0,0,.6);
+  animation:toast-in .35s cubic-bezier(.34,1.56,.64,1)}
+#toast.on{display:block}
+@keyframes toast-in{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
+.th{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.t-title{font-size:14px;font-weight:700;color:var(--red)}
+.t-body{font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.7}
+.t-map{margin-top:7px}
+
+/* FLASH */
+#fov{display:none;position:fixed;inset:0;pointer-events:none;z-index:9997;
+  background:rgba(255,0,0,.15);animation:fflash .15s ease-out 3}
+#fov.on{display:block}
+@keyframes fflash{0%{opacity:1}100%{opacity:0}}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🚨</div>
+    <div>
+      <div class="logo-text">Accident<span>Watch</span></div>
+      <div class="logo-sub">Nashik Traffic Intelligence System v3</div>
+    </div>
+  </div>
+  <div class="hpill live"><div class="dot g"></div>LIVE</div>
+  <div class="hpill gpu" id="gpu-pill"><div class="dot" style="background:var(--purple)"></div>{{ device }}</div>
+  <div class="hsep"></div>
+  <span class="hstat">FPS <b id="hfps">–</b></span>
+  <span class="hstat">Frame <b id="hframe">0</b></span>
+  <span class="hstat">Model <b>{{ model }}</b></span>
+  <div class="hsep"></div>
+  <span class="hstat">📍 <b>{{ location.name }}</b></span>
+  <span class="hstat">{{ location.lat }}°N {{ location.lng }}°E</span>
+  <div class="ml" style="display:flex;align-items:center;gap:8px">
+    <div id="hclock"></div>
+    <button class="btn red" onclick="fireTest()">⚡ Test Alert</button>
+    <button class="btn" onclick="clearAll()">🗑 Clear</button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- STAT CARDS -->
+  <div class="stat-row">
+    <div class="sc c0" id="sc0"><div class="sc-lbl">Vehicles</div><div class="sc-val" id="sv-v">0</div><div class="sc-sub" id="sv-cong">Clear</div></div>
+    <div class="sc c1" id="sc1"><div class="sc-lbl">Accidents</div><div class="sc-val" id="sv-a">0</div><div class="sc-sub">total incidents</div></div>
+    <div class="sc c2" id="sc2"><div class="sc-lbl">Avg Speed</div><div class="sc-val" id="sv-s">0</div><div class="sc-sub" id="sv-ms">Max: 0 km/h</div></div>
+    <div class="sc c3" id="sc3"><div class="sc-lbl">Live FPS</div><div class="sc-val" id="sv-f">–</div><div class="sc-sub" id="sv-dev">GPU</div></div>
+    <div class="sc c4"><div class="sc-lbl">Location</div><div class="sc-val" style="font-size:15px;padding-top:4px">{{ location.lat }}°N</div><div class="sc-sub">{{ location.lng }}°E · {{ location.name }}</div></div>
+    <div class="sc c5" id="sc5"><div class="sc-lbl">Source</div><div class="sc-val" style="font-size:15px;padding-top:4px" id="sv-src">Webcam</div><div class="sc-sub" id="sv-src-sub">live camera</div></div>
+  </div>
+
+  <!-- VIDEO PANEL -->
+  <div class="panel video-panel">
+    <div class="vtabs">
+      <button class="vtab active" onclick="switchFeed('live',this)">🎥 Live Feed</button>
+      <button class="vtab" onclick="switchFeed('heatmap',this)">🌡 Heatmap</button>
+    </div>
+    <div class="vwrap">
+      <div class="acc-ring" id="acc-ring"></div>
+      <div class="acc-banner" id="acc-banner">
+        <div class="acc-dot"></div>
+        <span id="banner-msg">ACCIDENT DETECTED</span>
+        <span class="acc-sev" id="banner-sev">MODERATE</span>
+        <span class="acc-time" id="banner-t"></span>
+      </div>
+      <img id="vimg" src="/video_feed" alt="Live feed">
+    </div>
+
+    <!-- Video source controls -->
+    <div class="vsrc">
+      <!-- Row 1: Upload file -->
+      <div class="vsrc-row">
+        <span class="vsrc-label">📁 Upload video:</span>
+        <input type="file" id="vid-file" accept="video/*" style="display:none" onchange="uploadVideo(this)">
+        <button class="btn cyan" onclick="document.getElementById('vid-file').click()">Choose File</button>
+        <button class="btn green" onclick="switchWebcam()">📷 Webcam</button>
+        <span id="vsrc-status"></span>
+      </div>
+      <!-- Upload progress bar -->
+      <div class="upload-prog" id="uprog"><div class="upload-bar" id="ubar"></div></div>
+      <!-- Row 2: Local path shortcut -->
+      <div class="vsrc-row">
+        <span class="vsrc-label">📂 Local path:</span>
+        <input type="text" class="path-input" id="path-input"
+               placeholder="C:\Users\ASUS\Videos\accident.mp4">
+        <button class="btn" onclick="useLocalPath()">Use</button>
+      </div>
+    </div>
+
+    <div class="vfoot">
+      <span class="stream-live"><div class="dot g"></div>STREAM ACTIVE</span>
+      <div class="vfr">
+        <span id="vf-v">Vehicles: 0</span>
+        <span id="vf-a">Incidents: 0</span>
+        <span id="vf-fr">Frame: 0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT COLUMN -->
+  <div class="right-col">
+    <div class="panel" style="flex:0 0 auto">
+      <div class="ph">Speed trend <span class="badge">last 60 pts</span></div>
+      <div class="chart-box"><canvas id="speedChart"></canvas></div>
+    </div>
+    <div class="panel" style="flex:0 0 auto">
+      <div class="ph">Accident score <span class="badge">live</span></div>
+      <div class="chart-box"><canvas id="scoreChart"></canvas></div>
+    </div>
+    <div class="panel" style="flex:1">
+      <div class="ph">Vehicle breakdown</div>
+      <div class="bdgrid">
+        <div class="bdi"><span class="bdi-n">Cars</span><span class="bdi-v" id="bc-car">0</span></div>
+        <div class="bdi"><span class="bdi-n">Trucks</span><span class="bdi-v" id="bc-truck">0</span></div>
+        <div class="bdi"><span class="bdi-n">Bikes</span><span class="bdi-v" id="bc-motorcycle">0</span></div>
+        <div class="bdi"><span class="bdi-n">Buses</span><span class="bdi-v" id="bc-bus">0</span></div>
+      </div>
+      <div class="cong-wrap">
+        <div class="cong-lbl"><span>Congestion</span><span id="cong-val">Clear</span></div>
+        <div class="cong-track"><div class="cong-fill" id="cong-fill" style="width:5%;background:var(--green)"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="panel" style="flex:1;display:flex;flex-direction:column">
+      <div class="ph">
+        Incident Log
+        <span class="badge" id="inc-badge">0 events</span>
+      </div>
+      <div class="inc-list" id="inc-list">
+        <div class="empty-msg" id="empty-msg">
+          No incidents yet.<br>
+          Click <b>⚡ Test Alert</b> to verify the system.<br>
+          Upload a traffic video to detect real accidents.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<div id="fov"></div>
+
+<div id="toast">
+  <div class="th"><div class="dot r"></div><div class="t-title" id="t-title">ACCIDENT</div></div>
+  <div class="t-body" id="t-body"></div>
+  <div class="t-map" id="t-map"></div>
+</div>
+
+<script>
+const socket = io();
+let incCount = 0;
+const N = 60;
+const sBuf = Array(N).fill(0);
+const aBuf = Array(N).fill(0);
+let lastScore = 0;
+
+// ── Charts ────────────────────────────────────
+function mkChart(id, color, yMax){
+  return new Chart(document.getElementById(id).getContext('2d'),{
+    type:'line',
+    data:{labels:Array(N).fill(''),datasets:[{data:Array(N).fill(0),
+      borderColor:color,backgroundColor:color.replace(')',',0.06)').replace('rgb','rgba'),
+      borderWidth:1.5,fill:true,tension:0.4,pointRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{x:{display:false},y:{min:0,max:yMax||undefined,
+        grid:{color:'rgba(255,255,255,0.04)'},
+        ticks:{color:'#4e6070',font:{family:'JetBrains Mono',size:9},maxTicksLimit:4}}}}
+  });
+}
+const spChart = mkChart('speedChart','#00e5ff');
+const scChart = mkChart('scoreChart','#ff2d2d', 100);
+
+function pushChart(chart, buf, val){
+  buf.shift(); buf.push(val);
+  chart.data.datasets[0].data = [...buf];
+  chart.update('none');
+}
+
+// ── Socket events ─────────────────────────────
+socket.on('stats_update', s => {
+  setV('sv-v', s.vehicle_count,  'sc0');
+  setV('sv-a', s.total_accidents,'sc1');
+  setV('sv-s', s.avg_speed,      'sc2');
+  setV('sv-f', s.live_fps??'–',  'sc3');
+  setText('sv-ms',  `Max: ${s.max_speed} km/h`);
+  setText('sv-cong', s.congestion_level??'Clear');
+  setText('sv-dev',  s.device??'cpu');
+  setText('hfps',    s.live_fps??'–');
+
+  const src = s.source ?? 'webcam';
+  setText('sv-src', src==='webcam' ? 'Webcam' : 'Video');
+  setText('sv-src-sub', s.source_name ?? (src==='webcam'?'live camera':'uploaded file'));
+
+  const tc = s.traffic_counts||{};
+  ['car','truck','motorcycle','bus'].forEach(t=>{
+    const el=document.getElementById(`bc-${t}`);
+    if(el) el.textContent = tc[t]??0;
+  });
+
+  const lvl = s.congestion_level||'Clear';
+  const pct = {Clear:5,Moderate:50,Heavy:90}[lvl]||5;
+  const col = {Clear:'var(--green)',Moderate:'var(--amber)',Heavy:'var(--red)'}[lvl];
+  document.getElementById('cong-fill').style.cssText=`width:${pct}%;background:${col}`;
+  setText('cong-val', lvl);
+  setText('vf-v',`Vehicles: ${s.vehicle_count}`);
+  setText('vf-a',`Incidents: ${s.total_accidents}`);
+
+  pushChart(spChart, sBuf, s.avg_speed);
+});
+
+socket.on('accident_alert', inc => {
+  addIncident(inc);
+  showBanner(inc);
+  showToast(inc);
+  triggerFlash();
+  lastScore = inc.accident_score ?? 75;
+  pushChart(scChart, aBuf, lastScore);
+});
+
+socket.on('incident_history', d => {
+  d.incidents.forEach(i => addIncident(i, false));
+});
+
+socket.on('source_changed', d => {
+  const s = d.source;
+  setText('sv-src', s==='webcam'?'Webcam':'Video');
+  setText('sv-src-sub', d.filename??(s==='webcam'?'live camera':'file'));
+  const st = document.getElementById('vsrc-status');
+  st.style.color = 'var(--green)';
+  st.textContent = s==='webcam' ? '✓ Webcam active' : `✓ ${d.filename}`;
+  document.getElementById('uprog').classList.remove('show');
+});
+
+socket.on('upload_progress', d => {
+  const pct = Math.min(99, Math.round(d.mb / 200 * 100));
+  document.getElementById('uprog').classList.add('show');
+  document.getElementById('ubar').style.width = pct + '%';
+  const st = document.getElementById('vsrc-status');
+  st.style.color = 'var(--amber)';
+  st.textContent = `⏳ ${d.mb} MB uploaded...`;
+});
+
+socket.on('incidents_cleared', () => {
+  document.getElementById('inc-list').innerHTML =
+    '<div class="empty-msg" id="empty-msg">Log cleared.</div>';
+  incCount = 0;
+  setText('inc-badge','0 events');
+  setText('sv-a','0'); setText('vf-a','Incidents: 0');
+});
+
+// ── Incident rendering ────────────────────────
+function addIncident(inc, prepend=true){
+  document.getElementById('empty-msg')?.remove();
+  incCount++;
+  setText('inc-badge', `${incCount} events`);
+
+  const el = document.createElement('div');
+  el.className = 'inc-item';
+  el.innerHTML = `
+    <div class="inc-top">
+      <span class="sp sp${inc.severity}">${inc.severity_label}</span>
+      <span class="inc-vehs">${inc.vehicles_involved} vehicle${inc.vehicles_involved>1?'s':''}</span>
+      <span class="inc-time">${inc.timestamp}</span>
+    </div>
+    <div class="inc-meta">Score ${inc.accident_score}% · Conf ${inc.confidence}% · ${inc.date??''}</div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:3px;flex-wrap:wrap">
+      <span style="font-family:var(--mono);font-size:9px;color:var(--muted)">📍 ${inc.location_name??'Nashik, Maharashtra'}</span>
+      ${inc.maps_url?`<a class="ilink" href="${inc.maps_url}" target="_blank">🗺 Maps ↗</a>`:''}
+      ${inc.snapshot_url?`<a class="ilink amber" href="${inc.snapshot_url}" target="_blank">📸 Snapshot</a>`:''}
+    </div>`;
+  const list = document.getElementById('inc-list');
+  if(prepend) list.insertBefore(el, list.firstChild);
+  else list.appendChild(el);
+}
+
+function showBanner(inc){
+  const b = document.getElementById('acc-banner');
+  setText('banner-msg',`ACCIDENT — ${inc.severity_label.toUpperCase()}`);
+  setText('banner-sev',`SCORE ${inc.accident_score}%`);
+  setText('banner-t', inc.timestamp);
+  document.getElementById('acc-ring').classList.add('on');
+  b.classList.add('on');
+  setTimeout(()=>{b.classList.remove('on');document.getElementById('acc-ring').classList.remove('on')},8000);
+}
+
+function showToast(inc){
+  setText('t-title',`🚨 ${inc.severity_label} Accident Detected`);
+  document.getElementById('t-body').innerHTML =
+    `${inc.vehicles_involved} vehicles · ${inc.confidence}% conf · score ${inc.accident_score}%<br>`+
+    `📍 ${inc.location_name??'Nashik, Maharashtra'}<br>`+
+    `${inc.date??''} ${inc.timestamp}`;
+  document.getElementById('t-map').innerHTML = inc.maps_url
+    ? `<a class="ilink" href="${inc.maps_url}" target="_blank">🗺 Open Google Maps ↗</a>` : '';
+  const t = document.getElementById('toast');
+  t.classList.remove('on'); void t.offsetWidth; t.classList.add('on');
+  setTimeout(()=>t.classList.remove('on'), 9000);
+}
+
+function triggerFlash(){
+  const o=document.getElementById('fov');
+  o.classList.remove('on'); void o.offsetWidth; o.classList.add('on');
+  setTimeout(()=>o.classList.remove('on'),700);
+}
+
+// ── Video controls ────────────────────────────
+function switchFeed(type,btn){
+  document.querySelectorAll('.vtab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('vimg').src = type==='heatmap'?'/heatmap_feed':'/video_feed';
+}
+
+async function uploadVideo(input){
+  const file = input.files[0];
+  if(!file) return;
+  const st = document.getElementById('vsrc-status');
+  st.style.color='var(--amber)';
+  st.textContent=`⏳ Uploading ${file.name}...`;
+  document.getElementById('uprog').classList.add('show');
+  document.getElementById('ubar').style.width='0%';
+
+  const fd = new FormData();
+  fd.append('video', file);
+
+  // Use XMLHttpRequest for real upload progress
+  const xhr = new XMLHttpRequest();
+  xhr.upload.addEventListener('progress', e => {
+    if(e.lengthComputable){
+      const pct = Math.round(e.loaded/e.total*100);
+      document.getElementById('ubar').style.width = pct+'%';
+      st.textContent = `⏳ Uploading... ${pct}%`;
+    }
+  });
+  xhr.addEventListener('load', () => {
+    try{
+      const d = JSON.parse(xhr.responseText);
+      if(d.status==='ok'){
+        st.style.color='var(--green)';
+        st.textContent=`✓ Analysing: ${d.file} (${d.size_mb}MB)`;
+        document.getElementById('ubar').style.width='100%';
+        setTimeout(()=>document.getElementById('uprog').classList.remove('show'),2000);
+      } else {
+        st.style.color='var(--red)';
+        st.textContent=`✗ ${d.error}`;
+      }
+    }catch(e){ st.style.color='var(--red)'; st.textContent='✗ Upload failed'; }
+  });
+  xhr.addEventListener('error', ()=>{
+    st.style.color='var(--red)'; st.textContent='✗ Upload error';
+  });
+  xhr.open('POST','/upload_video');
+  xhr.send(fd);
+}
+
+async function useLocalPath(){
+  const path = document.getElementById('path-input').value.trim();
+  if(!path){ alert('Enter a file path first'); return; }
+  const st = document.getElementById('vsrc-status');
+  st.style.color='var(--amber)'; st.textContent='⏳ Switching...';
+  try{
+    const r = await fetch('/api/use_local_path',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({path})
+    });
+    const d = await r.json();
+    if(d.status==='ok'){
+      st.style.color='var(--green)';
+      st.textContent=`✓ Using: ${d.file}`;
+    } else {
+      st.style.color='var(--red)';
+      st.textContent=`✗ ${d.error}`;
+    }
+  }catch(e){ st.style.color='var(--red)'; st.textContent='✗ Error'; }
+}
+
+async function switchWebcam(){
+  const st = document.getElementById('vsrc-status');
+  await fetch('/api/switch_webcam');
+  st.style.color='var(--green)'; st.textContent='✓ Webcam active';
+}
+
+async function fireTest(){
+  const r = await fetch('/api/test_alert');
+  const d = await r.json();
+  console.log('Test alert:', d);
+}
+
+async function clearAll(){
+  await fetch('/api/clear_incidents');
+}
+
+// ── Helpers ──────────────────────────────────
+function setV(id, val, scId){
+  const el=document.getElementById(id);
+  if(!el||el.textContent===String(val)) return;
+  el.textContent=val;
+  if(scId){ const s=document.getElementById(scId); s?.classList.remove('flashing'); void s?.offsetWidth; s?.classList.add('flashing'); }
+}
+function setText(id, val){
+  const el=document.getElementById(id);
+  if(el) el.textContent=val;
+}
+
+// Score decay
+setInterval(()=>{
+  if(lastScore>0){ lastScore=Math.max(0,lastScore-1.5); pushChart(scChart,aBuf,lastScore); }
+},300);
+
+// Clock
+setInterval(()=>setText('hclock',new Date().toLocaleTimeString()),1000);
+setText('hclock',new Date().toLocaleTimeString());
+
+// Health poll
+setInterval(async()=>{
+  try{
+    const d=await(await fetch('/api/health')).json();
+    setText('hframe',d.frame); setText('vf-fr',`Frame: ${d.frame}`);
+    setV('sv-f',d.fps,'sc3'); setText('hfps',d.fps);
+  }catch(e){}
+},1200);
+</script>
+</body>
+</html>
